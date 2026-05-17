@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高尔夫下场计分系统</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
+        body{background:#f5f7fa;padding:15px}
+        .container{max-width:1000px;margin:0 auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px #00000015}
+        h2{text-align:center;color:#2c6e31;margin-bottom:20px}
+        .info-box{display:flex;gap:15px;flex-wrap:wrap;margin-bottom:15px}
+        .info-item{flex:1;min-width:180px}
+        label{display:block;margin:6px 0;color:#333}
+        input{width:100%;padding:10px;border:1px #ccc solid;border-radius:6px}
+        table{width:100%;border-collapse:collapse;margin:20px 0}
+        th,td{border:1px #ddd solid;padding:10px;text-align:center}
+        th{background:#2c6e31;color:#fff}
+        .score-input{width:60px;text-align:center}
+        .btn-box{text-align:center;margin:20px 0}
+        button{padding:12px 25px;border:none;border-radius:6px;background:#2c6e31;color:#fff;font-size:16px;cursor:pointer;margin:0 8px}
+        button.reset{background:#999}
+        button.upcsv{background:#1677ff}
+        .total-box{font-size:18px;font-weight:bold;color:#2c6e31;margin:15px 0;text-align:center}
+        .history{margin-top:30px}
+        .history h3{color:#2c6e31;margin-bottom:10px}
+        .record-item{padding:10px;border:1px #eee solid;border-radius:6px;margin:8px 0;display:flex;justify-content:space-between}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>高尔夫下场计分系统</h2>
+
+        <div class="info-box">
+            <div class="info-item">
+                <label>球友姓名</label>
+                <input type="text" id="userName" placeholder="输入姓名">
+            </div>
+            <div class="info-item">
+                <label>球场名称</label>
+                <input type="text" id="courseName" placeholder="输入球场">
+            </div>
+            <div class="info-item">
+                <label>日期</label>
+                <input type="date" id="playDate">
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>洞号</th>
+                    <th>标准杆</th>
+                    <th>实际杆数</th>
+                    <th>成绩</th>
+                </tr>
+            </thead>
+            <tbody id="holeTable">
+            </tbody>
+        </table>
+
+        <div class="total-box">
+            总杆数：<span id="totalScore">0</span> 杆
+            &nbsp;&nbsp;&nbsp;
+            总标准杆：<span id="totalPar">72</span> 杆
+            &nbsp;&nbsp;&nbsp;
+            净杆差：<span id="diffScore">0</span> 杆
+        </div>
+
+        <div class="btn-box">
+            <button onclick="saveTempData()">暂存本场成绩</button>
+            <button class="upcsv" onclick="getNewCsvLine()">生成CSV新增行</button>
+            <button class="reset" onclick="resetAll()">清空重填</button>
+        </div>
+
+        <div style="background:#f0f7ff;padding:10px;border-radius:6px;margin:15px 0;display:none" id="csvLineBox">
+            <p>复制下面整行，粘贴到仓库 record.csv 末尾即可永久保存</p>
+            <textarea id="csvText" style="width:100%;height:60px;"></textarea>
+        </div>
+
+        <div class="history">
+            <h3>📊 云端CSV历史记录</h3>
+            <div id="historyList">加载中...</div>
+        </div>
+    </div>
+
+<script>
+// 18洞标准杆
+const holePar = [4,4,3,4,4,3,5,4,4,
+                 4,4,3,4,4,3,5,4,4];
+const totalParAll = holePar.reduce((a,b)=>a+b,0);
+// 你的csv公开地址
+const CSV_URL = "https://raw.githubusercontent.com/chenzhenle/AiDesheng/main/record.csv";
+
+// 初始化表格
+function initTable(){
+    const tbody = document.getElementById('holeTable');
+    tbody.innerHTML = '';
+    holePar.forEach((par,idx)=>{
+        let hole = idx+1;
+        let tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${hole}</td>
+            <td>${par}</td>
+            <td><input class="score-input" type="number" min="1" value="" onchange="calcTotal()"></td>
+            <td class="res-${hole}">-</td>
+        `;
+        tbody.appendChild(tr);
+    })
+    calcTotal();
+}
+
+// 计算总分
+function calcTotal(){
+    let inputs = document.querySelectorAll('.score-input');
+    let total = 0;
+    inputs.forEach((inp,idx)=>{
+        let val = parseInt(inp.value) || 0;
+        total += val;
+        let diff = val - holePar[idx];
+        let resText = "";
+        if(diff===0) resText="Par";
+        else if(diff===1) resText="柏忌";
+        else if(diff===2) resText="双柏忌";
+        else if(diff===-1) resText="小鸟";
+        else if(diff===-2) resText="老鹰";
+        else resText=diff>0?`+${diff}`:diff;
+        document.querySelector(`.res-${idx+1}`).innerText = resText;
+    })
+    document.getElementById('totalScore').innerText = total;
+    document.getElementById('totalPar').innerText = totalParAll;
+    document.getElementById('diffScore').innerText = total - totalParAll;
+}
+
+// 暂存到本地
+function saveTempData(){
+    let name = document.getElementById('userName').value.trim();
+    let course = document.getElementById('courseName').value.trim();
+    let date = document.getElementById('playDate').value;
+    let total = document.getElementById('totalScore').innerText;
+    if(!name||!course||!date||total<=0){
+        alert("完善信息并填完成绩再保存");
+        return;
+    }
+    alert("本场成绩已本地暂存，点击【生成CSV新增行】即可导出入库");
+}
+
+// 生成csv单行数据
+function getNewCsvLine(){
+    let name = document.getElementById('userName').value.trim();
+    let course = document.getElementById('courseName').value.trim();
+    let date = document.getElementById('playDate').value;
+    let total = document.getElementById('totalScore').innerText;
+    let diff = document.getElementById('diffScore').innerText;
+    if(!name||!course||!date||total<=0){
+        alert("请填写完整信息+打完成绩");
+        return;
+    }
+    // csv一行格式
+    let line = `${date},${name},${course},${total},${diff}`;
+    document.getElementById('csvLineBox').style.display = "block";
+    document.getElementById('csvText').value = line;
+}
+
+// 读取远程CSV并渲染网页下方记录
+async function loadCsvRecord(){
+    try{
+        let res = await fetch(CSV_URL);
+        let text = await res.text();
+        let rows = text.trim().split('\n');
+        let html = "";
+        // 跳过表头
+        for(let i=1;i<rows.length;i++){
+            let arr = rows[i].split(',');
+            if(arr.length<5) continue;
+            html += `
+            <div class="record-item">
+                <span>${arr[0]} | ${arr[1]} | ${arr[2]}</span>
+                <span>总杆${arr[3]} 差值${arr[4]}</span>
+            </div>
+            `
+        }
+        document.getElementById('historyList').innerHTML = html || "<p>暂无下场记录，请添加成绩后录入CSV</p>";
+    }catch(e){
+        document.getElementById('historyList').innerHTML = "<p>读取CSV失败，请确认文件路径正确</p>";
+    }
+}
+
+// 清空表单
+function resetAll(){
+    document.getElementById('userName').value = '';
+    document.getElementById('courseName').value = '';
+    document.getElementById('playDate').value = new Date().toISOString().split('T')[0];
+    document.querySelectorAll('.score-input').forEach(i=>i.value='');
+    document.getElementById('csvLineBox').style.display = "none";
+    calcTotal();
+}
+
+window.onload = function(){
+    initTable();
+    loadCsvRecord();
+    let now = new Date();
+    let d = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    document.getElementById('playDate').value = d;
+}
+</script>
+</body>
+</html>
